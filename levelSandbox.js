@@ -34,6 +34,19 @@ function addDataToLevelDB(value) {
         });
 }
 
+// Get # of blocks in the chain
+function getLevelDbLength(){
+    let i = 0;
+    db.createReadStream().on('data', function(data) {
+            i++;
+        }).on('error', function(err) {
+            return console.log('Unable to read data stream!', err)
+        }).on('close', function() {
+            return i;
+        });
+
+}
+
 /* ===== Testing ==============================================================|
 |  - Self-invoking function to add blocks to chain                             |
 |  - Learn more:                                                               |
@@ -45,10 +58,11 @@ function addDataToLevelDB(value) {
 |     ( new block every 10 minutes )                                           |
 |  ===========================================================================*/
 
-
+/*
 (function theLoop (i) {
   setTimeout(function () {
     addDataToLevelDB('Testing data');
     if (--i) theLoop(i);
   }, 100);
 })(10);
+*/
