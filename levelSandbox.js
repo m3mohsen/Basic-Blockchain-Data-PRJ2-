@@ -47,6 +47,8 @@ function getLevelDbLength(){
 
 }
 
+module.exports = { addLevelDBData, getLevelDBData };
+
 /* ===== Testing ==============================================================|
 |  - Self-invoking function to add blocks to chain                             |
 |  - Learn more:                                                               |
