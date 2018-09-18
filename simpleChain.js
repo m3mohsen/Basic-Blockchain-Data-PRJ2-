@@ -3,46 +3,7 @@
 |  =========================================================*/
 
 const SHA256 = require('crypto-js/sha256');
-const level = require('level');
-const chainDB = './chaindata';
-const db = level(chainDB);
-
-/* ===== LevelDB Functions ==============================
-|  Functions to store and retrieve data persistently|
-|  ===============================================*/
-
-// Add data to levelDB with key/value pair
-function addLevelDBData(key,value){
-  db.put(key, value, function(err) {
-    if (err) return console.log('Block ' + key + ' submission failed', err);
-  });
-}
-
-// Get data from levelDB with key
-function getLevelDBData(key){
-  return new Promise(function(resolve, reject) {
-    db.get(key, function(err, value) {
-        if (err){
-            return console.log('Not found!', err);
-        }
-        //console.log('Value = ' + value);
-        resolve(value);
-      })
-  });
-}
-
-// Add data to levelDB with value
-function addDataToLevelDB(value) {
-    let i = 0;
-    db.createReadStream().on('data', function(data) {
-          i++;
-        }).on('error', function(err) {
-            return console.log('Unable to read data stream!', err);
-        }).on('close', function() {
-          console.log('Block #' + i);
-          addLevelDBData(i, value);
-        });
-}
+const storage = require('./levelSandbox');
 
 /* ===== Block Class ==============================
 |  Class with a constructor for block 			   |
@@ -66,7 +27,7 @@ class Blockchain{
   constructor(){
     console.log('Creating The Blockchain...');
     //if DB is empty add Genesis block
-    this.getChainLenght()
+    this.getChainLength()
     .then(chainLen => {
         //Genesis block if chain length is 0
         if(chainLen == 0)
@@ -79,7 +40,7 @@ class Blockchain{
 
   // Add new block
   async addBlock(newBlock){
-    let chainLen = await this.getChainLenght();
+    let chainLen = await this.getChainLength();
     // Block height
     newBlock.height = chainLen;
     // UTC timestamp
@@ -87,7 +48,7 @@ class Blockchain{
     // previous block hash
     if(chainLen>0){
         let prevBlockHeight = chainLen - 1;
-        getLevelDBData(prevBlockHeight)
+        storage.getLevelDBData(prevBlockHeight)
         .then(prevBlock => {
             newBlock.previousBlockHash = JSON.parse(prevBlock).hash;
 
@@ -95,7 +56,7 @@ class Blockchain{
             newBlock.hash = SHA256(JSON.stringify(newBlock)).toString();
 
             // Adding block object to chain
-            addDataToLevelDB(JSON.stringify(newBlock));
+            storage.addDataToLevelDB(JSON.stringify(newBlock));
             console.log("Finish adding the new block");
         })
         .catch(error =>{
@@ -107,79 +68,84 @@ class Blockchain{
          newBlock.hash = SHA256(JSON.stringify(newBlock)).toString();
 
          // Adding block object to chain
-         addDataToLevelDB(JSON.stringify(newBlock));
+         storage.addDataToLevelDB(JSON.stringify(newBlock));
          console.log("Finish adding the Genesis block");
     }
   }
 
   // Get a promise for block height
-  async getChainLenght(){
-    return new Promise(function(resolve, reject) {
-        let i = 0;
-        db.createReadStream()
-            .on('data', function() {
-                i++;
-            })
-            .on('error', function() {
-                reject("Could not retrieve chain length");
-            })
-            .on('close', function() {
-                resolve(i);
-            });
-    });
+  async getChainLength(){
+    let chainLen = await storage.getDBLength();
+    return chainLen;
   }
 
   // Get block height
   async getBlockHeight() {
-    let chainLen = await this.getChainLenght();
+    let chainLen = await this.getChainLength();
     console.log(chainLen-1);
     return chainLen-1;
   }
 
   // Get block
   async getBlock(blockHeight){
-    let block = await getLevelDBData(blockHeight);
+    let block = await storage.getLevelDBData(blockHeight);
     console.log(JSON.parse(block));
     return JSON.parse(block);
   }
 
   // Validate block
   async validateBlock(blockHeight){
-    let block = await this.getBlock(blockHeight);
-    // get block hash
-    let blockHash = block.hash;
-    // remove block hash to test block integrity
-    block.hash = '';
-    // generate block hash
-    let validBlockHash = SHA256(JSON.stringify(block)).toString();
-    // Compare
-    if (blockHash===validBlockHash) {
-        console.log("Valid");
-        return true;
-    }
-    else {
-        console.log('Block #'+blockHeight+' invalid hash:\n'+blockHash+'<>'+validBlockHash);
+    try{
+        let block = await this.getBlock(blockHeight);
+        // get block hash
+        let blockHash = block.hash;
+        // remove block hash to test block integrity
+        block.hash = '';
+        // generate block hash
+        let validBlockHash = SHA256(JSON.stringify(block)).toString();
+        // Compare
+        if (blockHash===validBlockHash) {
+            console.log("Valid");
+            return true;
+        }
+        else {
+            console.log('Block #'+blockHeight+' invalid hash:\n'+blockHash+'<>'+validBlockHash);
+            console.log("Invalid");
+            return false;
+        }
+    } catch(error){
+        console.log('Block #'+blockHeight);
         console.log("Invalid");
         return false;
     }
+
   }
 
   // Validate blockchain
   async validateChain(){
     let errorLog = []
-    let chainLen = await this.getChainLenght();
+    let chainLen = await this.getChainLength();
     for(let i=0; i<chainLen-1; i++){
-        // Validate block i
-        let blockValid = await this.validateBlock(i);
-        if(!blockValid)
+        try{
+            // Validate block i
+            let blockValid = await this.validateBlock(i);
+            if(!blockValid){
+                errorLog.push(i);
+            }
+        } catch(error){
             errorLog.push(i);
+        }
 
-        //validate i,i+1 chain
-        let blockI = await getLevelDBData(i);
-        let blockJ = await getLevelDBData(i+1);
-        let blockHash = JSON.parse(blockI).hash;
-        let previousHash = JSON.parse(blockJ).previousBlockHash;
-        if (blockHash!==previousHash) {
+        try{
+            //validate i,i+1 chain
+            let blockI = await storage.getLevelDBData(i);
+            let blockJ = await storage.getLevelDBData(i+1);
+            let blockHash = JSON.parse(blockI).hash;
+            let previousHash = JSON.parse(blockJ).previousBlockHash;
+            if (blockHash!==previousHash) {
+                errorLog.push(i);
+            }
+        } catch(error){
             errorLog.push(i);
         }
     }
